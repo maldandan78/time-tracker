@@ -29,6 +29,10 @@ struct ContentView: View {
 struct MainPane: View {
     @Environment(DataStore.self) private var store
     let selection: SidebarItem?
+    /// Live search query from the toolbar field. Filters the entry list (and therefore the
+    /// day/cluster grouping and every subtotal, which all derive from the filtered set) by
+    /// matching entry descriptions and project names. Empty = show everything.
+    @State private var searchText = ""
 
     var body: some View {
         Group {
@@ -44,11 +48,13 @@ struct MainPane: View {
                     TrackerBar(preferredProjectID: preferredProjectID)
                         .background(.bar)
                     Divider()
-                    EntryListView(selection: selection)
+                    EntryListView(selection: selection, searchText: searchText)
                 }
             }
         }
         .navigationTitle(title)
+        // Native toolbar search field (⌘F focuses it). Matches descriptions + project names.
+        .searchable(text: $searchText, placement: .toolbar, prompt: "Search descriptions or projects")
         // Drag a pin OR a favorite out here to remove it. One low-level multi-type drop target.
         // Stacking two .dropDestination(for:) modifiers is
         // NOT reliable on macOS 14 — the outer one shadows the inner, so only one payload type

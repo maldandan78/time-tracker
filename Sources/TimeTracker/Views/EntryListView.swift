@@ -8,6 +8,9 @@ import SwiftUI
 struct EntryListView: View {
     @Environment(DataStore.self) private var store
     let selection: SidebarItem?
+    /// Toolbar search query (owned by MainPane). Space-separated tokens are matched (AND) against
+    /// each entry's description + project name; empty means no filtering.
+    var searchText: String = ""
 
     @State private var expanded: Set<String> = []
     @State private var pendingDelete: PendingDelete?
@@ -17,11 +20,15 @@ struct EntryListView: View {
     var body: some View {
         Group {
             if visibleEntries.isEmpty {
-                ContentUnavailableView(
-                    "No time entries yet",
-                    systemImage: "clock",
-                    description: Text("Start a timer above to track your first entry.")
-                )
+                if isSearching {
+                    ContentUnavailableView.search(text: searchText)
+                } else {
+                    ContentUnavailableView(
+                        "No time entries yet",
+                        systemImage: "clock",
+                        description: Text("Start a timer above to track your first entry.")
+                    )
+                }
             } else {
                 list
             }
@@ -366,10 +373,26 @@ struct EntryListView: View {
     }
 
     private var visibleEntries: [TimeEntry] {
+        let scoped: [TimeEntry]
         switch selection {
-        case .project(let id): return store.entries.filter { $0.projectID == id }
-        default: return store.entries
+        case .project(let id): scoped = store.entries.filter { $0.projectID == id }
+        default: scoped = store.entries
         }
+        return filtered(scoped)
+    }
+
+    /// Whether a non-blank search query is active.
+    private var isSearching: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Case-insensitive boolean search over each entry's description + project name. Adjacent terms
+    /// AND together, and `&`, `|`, `!`, `( )` are honored (see `SearchQuery`). So `meet john` matches
+    /// "Meeting with John", `standup | review` matches either, and `bug !fixed` excludes "fixed".
+    private func filtered(_ entries: [TimeEntry]) -> [TimeEntry] {
+        let query = SearchQuery(searchText)
+        guard query.isActive else { return entries }
+        return entries.filter { query.matches("\($0.note) \(store.projectName($0.projectID))") }
     }
 
     private func todayTotal(asOf now: Date) -> TimeInterval {
