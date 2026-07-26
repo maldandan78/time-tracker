@@ -17,6 +17,12 @@ struct EntryListView: View {
     @State private var editingEntry: TimeEntry?
     @State private var editingGroup: EditingGroup?
 
+    /// The current day, used to label sections "Today"/"Yesterday". Held in state (rather than read
+    /// from `Date()` at render time) so the labels refresh when the calendar day rolls over while the
+    /// app stays open — otherwise "Today" stays pinned to whatever day the view last rendered on.
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var today = Calendar.current.startOfDay(for: .now)
+
     var body: some View {
         Group {
             if visibleEntries.isEmpty {
@@ -36,6 +42,22 @@ struct EntryListView: View {
         // Always fill the pane so the tracker bar stays pinned at the top (the empty-state
         // ContentUnavailableView otherwise collapses the VStack and centers it vertically).
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Refresh the "Today" reference when the day rolls over. `NSCalendarDayChanged` fires at
+        // midnight (and on wake if the day changed while asleep); re-checking on scene activation
+        // covers the case where that notification was missed during sleep.
+        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
+            refreshToday()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { refreshToday() }
+        }
+    }
+
+    /// Advance the cached day if the wall-clock day has moved on, invalidating `body` so the
+    /// section labels ("Today"/"Yesterday") recompute.
+    private func refreshToday() {
+        let start = Calendar.current.startOfDay(for: .now)
+        if start != today { today = start }
     }
 
     private var list: some View {
@@ -460,8 +482,11 @@ struct EntryListView: View {
 
     private func dayLabel(_ day: Date) -> String {
         let cal = Calendar.current
-        if cal.isDateInToday(day) { return "Today" }
-        if cal.isDateInYesterday(day) { return "Yesterday" }
+        // Compare against the cached `today` (not `Date()`) so labels stay correct across a day
+        // boundary while the app is open — `today` is refreshed on day-change / activation above.
+        if cal.isDate(day, inSameDayAs: today) { return "Today" }
+        if let yesterday = cal.date(byAdding: .day, value: -1, to: today),
+           cal.isDate(day, inSameDayAs: yesterday) { return "Yesterday" }
         return day.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
     }
 }
