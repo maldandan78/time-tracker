@@ -32,14 +32,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
 
-        // Global ⌃⌥⌘1…N → toggle the matching pin: start it, or stop it if it's already running.
-        HotKeyManager.shared.onFire = { number in
-            DataStore.shared.togglePin(at: number - 1)
+        // Global ⌃⌥⌘1…N → toggle the matching pin, ⇧⌃⌥⌘1…N → the matching favorite:
+        // start it, or stop it if it's already running.
+        HotKeyManager.shared.onFire = { group, number in
+            switch group {
+            case .pin: DataStore.shared.togglePin(at: number - 1)
+            case .favorite: DataStore.shared.toggleFavorite(at: number - 1)
+            }
         }
-        HotKeyManager.shared.register(count: DataStore.shared.pins.count)
+        HotKeyManager.shared.register(pins: DataStore.shared.pins.count,
+                                      favorites: DataStore.shared.shortcutFavoriteCount)
     }
 
-    // Stay alive when the window is closed so the global pin hotkeys keep working.
+    // Stay alive when the window is closed so the global pin/favorite hotkeys keep working.
     // The window reopens on dock-icon click; ⌘Q quits fully.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false

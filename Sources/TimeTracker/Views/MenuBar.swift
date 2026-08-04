@@ -62,12 +62,36 @@ struct MenuBarContent: View {
 
         if !store.pins.isEmpty {
             Divider()
-            ForEach(Array(store.pins.enumerated()), id: \.element.id) { index, pin in
-                Button {
-                    store.togglePin(at: index)
-                } label: {
-                    let title = pin.note.isEmpty ? store.projectName(pin.projectID) : pin.note
-                    Text("\(store.isRunning(pin: pin) ? "⏹" : "▶") \(title)  (⌃⌥⌘\(index + 1))")
+            Section("Pins") {
+                ForEach(Array(store.pins.enumerated()), id: \.element.id) { index, pin in
+                    Button {
+                        store.togglePin(at: index)
+                    } label: {
+                        Text(rowTitle(note: pin.note,
+                                      projectID: pin.projectID,
+                                      running: store.isRunning(pin: pin),
+                                      shortcut: HotKeyGroup.pin.shortcutLabel(index: index)))
+                    }
+                }
+            }
+        }
+
+        // Favorites are unlimited, so only the first nine carry a ⇧⌃⌥⌘N shortcut — the rest are
+        // listed without one and start on click.
+        if !store.favorites.isEmpty {
+            Divider()
+            Section("Favorites") {
+                ForEach(Array(store.favorites.enumerated()), id: \.element.id) { index, favorite in
+                    Button {
+                        store.toggleFavorite(at: index)
+                    } label: {
+                        Text(rowTitle(note: favorite.note,
+                                      projectID: favorite.projectID,
+                                      running: store.isRunning(favorite: favorite),
+                                      shortcut: store.favoriteHasShortcut(at: index)
+                                          ? HotKeyGroup.favorite.shortcutLabel(index: index)
+                                          : nil))
+                    }
                 }
             }
         }
@@ -87,5 +111,14 @@ struct MenuBarContent: View {
             NSApp.terminate(nil)
         }
         .keyboardShortcut("q")
+    }
+
+    /// One quick-launch row: a ▶/⏹ state glyph, the description (or project name when blank), and
+    /// the item's global shortcut when it has one.
+    private func rowTitle(note: String, projectID: UUID, running: Bool, shortcut: String?) -> String {
+        let title = note.isEmpty ? store.projectName(projectID) : note
+        let row = "\(running ? "⏹" : "▶") \(title)"
+        guard let shortcut else { return row }
+        return "\(row)  (\(shortcut))"
     }
 }

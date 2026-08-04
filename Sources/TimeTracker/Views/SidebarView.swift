@@ -94,7 +94,7 @@ struct SidebarView: View {
                         Image(systemName: "plus")
                     }
                     .buttonStyle(.borderless)
-                    .help("Add a favorite")
+                    .help("Add a favorite (the first \(DataStore.maxShortcuts) get ⇧⌃⌥⌘1…\(DataStore.maxShortcuts))")
                 }
             }
         }
@@ -202,7 +202,7 @@ struct SidebarView: View {
 
     private var emptyPinsRow: some View {
         HStack(spacing: 8) {
-            SlotBadge(index: 0, dim: true)
+            SlotBadge(group: .pin, index: 0, dim: true)
             Text("Empty — drop a session")
                 .font(.callout)
                 .foregroundStyle(.tertiary)
@@ -220,8 +220,9 @@ struct SidebarView: View {
 
     private func pinRow(_ pin: Pin, index: Int) -> some View {
         let running = store.isRunning(pin: pin)
+        let shortcut = HotKeyGroup.pin.shortcutLabel(index: index)
         return HStack(spacing: 8) {
-            SlotBadge(index: index, dim: false)
+            SlotBadge(group: .pin, index: index, dim: false)
             VStack(alignment: .leading, spacing: 1) {
                 Text(pin.note.isEmpty ? store.projectName(pin.projectID) : pin.note)
                     .lineLimit(1)
@@ -238,7 +239,7 @@ struct SidebarView: View {
                     .foregroundStyle(running ? Color.red : Color.accentColor)
             }
             .buttonStyle(.borderless)
-            .help(running ? "Stop (⌃⌥⌘\(index + 1))" : "Start (⌃⌥⌘\(index + 1))")
+            .help(running ? "Stop (\(shortcut))" : "Start (\(shortcut))")
         }
         .padding(.vertical, 1)
         .contentShape(Rectangle())
@@ -257,9 +258,10 @@ struct SidebarView: View {
 
     private var emptyFavoritesRow: some View {
         HStack(spacing: 8) {
-            Text("Drag a session here to add")
+            SlotBadge(group: .favorite, index: 0, dim: true)
+            Text("Empty — drop a session")
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.tertiary)
                 .lineLimit(1)
             Spacer(minLength: 6)
         }
@@ -273,8 +275,13 @@ struct SidebarView: View {
     }
 
     private func favoriteRow(_ favorite: Favorite, index: Int) -> some View {
-        let running = store.isRunning(projectID: favorite.projectID, note: favorite.note)
+        let running = store.isRunning(favorite: favorite)
+        // Only the first nine favorites get a ⇧⌃⌥⌘N shortcut — there are just nine digit keys.
+        let shortcut = store.favoriteHasShortcut(at: index)
+            ? HotKeyGroup.favorite.shortcutLabel(index: index)
+            : nil
         return HStack(spacing: 8) {
+            favoriteBadge(index: index)
             VStack(alignment: .leading, spacing: 1) {
                 Text(favorite.note.isEmpty ? store.projectName(favorite.projectID) : favorite.note)
                     .lineLimit(1)
@@ -285,13 +292,13 @@ struct SidebarView: View {
             }
             Spacer(minLength: 6)
             Button {
-                store.toggleSession(projectID: favorite.projectID, note: favorite.note)
+                store.toggleFavorite(at: index)
             } label: {
                 Image(systemName: running ? "stop.circle.fill" : "play.circle.fill")
                     .foregroundStyle(running ? Color.red : Color.accentColor)
             }
             .buttonStyle(.borderless)
-            .help(running ? "Stop" : "Start this session")
+            .help(helpText(running: running, shortcut: shortcut))
         }
         .padding(.vertical, 1)
         .contentShape(Rectangle())
@@ -303,6 +310,24 @@ struct SidebarView: View {
                 Label("Remove", systemImage: "trash")
             }
         }
+    }
+
+    /// The ⇧⌃⌥⌘N badge for a favorite. Past the ninth favorite there's no digit key left, so the
+    /// badge is rendered hidden — keeping those rows' text aligned with the shortcut-carrying ones.
+    @ViewBuilder
+    private func favoriteBadge(index: Int) -> some View {
+        if store.favoriteHasShortcut(at: index) {
+            SlotBadge(group: .favorite, index: index, dim: false)
+        } else {
+            SlotBadge(group: .favorite, index: 0, dim: true).hidden()
+        }
+    }
+
+    /// Tooltip for a pin/favorite's play-stop button, naming the shortcut when it has one.
+    private func helpText(running: Bool, shortcut: String?) -> String {
+        let action = running ? "Stop" : "Start this session"
+        guard let shortcut else { return action }
+        return "\(action) (\(shortcut))"
     }
 
     /// Accent tint for an empty-state row while a session drag is over it.
@@ -324,12 +349,14 @@ struct SidebarView: View {
     }
 }
 
-/// The positional shortcut badge (⌃⌥⌘N). Shared by filled pin rows and the empty-state row.
+/// The positional shortcut badge — ⌃⌥⌘N for pins, ⇧⌃⌥⌘N for favorites. Shared by the filled rows
+/// of both lists and by their empty-state rows.
 private struct SlotBadge: View {
+    let group: HotKeyGroup
     let index: Int
     let dim: Bool
     var body: some View {
-        Text("⌃⌥⌘\(index + 1)")
+        Text(group.shortcutLabel(index: index))
             .font(.caption2)
             .monospaced()
             .foregroundStyle(dim ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))

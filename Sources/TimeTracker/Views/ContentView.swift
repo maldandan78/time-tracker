@@ -15,13 +15,25 @@ struct ContentView: View {
             MainPane(selection: selection)
         }
         .frame(minWidth: 720, minHeight: 420)
-        // Re-register global pin hotkeys whenever the pin count changes (add/remove — reorder keeps
-        // the count and so needs no re-register). Kept out of the model so Carbon/AppKit never leak
-        // into DataStore; onChange runs on the main thread (which HotKeyManager requires). Pins are
-        // only added/removed from the sidebar + main pane, so ContentView is always alive.
-        .onChange(of: store.pins.count) { _, newCount in
-            HotKeyManager.shared.register(count: newCount)
+        // Re-register the global pin (⌃⌥⌘N) and favorite (⇧⌃⌥⌘N) hotkeys whenever either count
+        // changes (add/remove — reorder keeps the counts and so needs no re-register). The favorite
+        // count is the clamped one, so adding a tenth favorite doesn't churn the registrations.
+        // Kept out of the model so Carbon/AppKit never leak into DataStore; onChange runs on the
+        // main thread (which HotKeyManager requires). Pins/favorites are only added and removed from
+        // the sidebar + main pane, so ContentView is always alive.
+        .onChange(of: hotKeyCounts) { _, counts in
+            HotKeyManager.shared.register(pins: counts.pins, favorites: counts.favorites)
         }
+    }
+
+    /// The two registration counts, bundled so one `onChange` covers both lists.
+    private struct HotKeyCounts: Equatable {
+        let pins: Int
+        let favorites: Int
+    }
+
+    private var hotKeyCounts: HotKeyCounts {
+        HotKeyCounts(pins: store.pins.count, favorites: store.shortcutFavoriteCount)
     }
 }
 

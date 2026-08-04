@@ -12,8 +12,11 @@ final class DataStore {
     /// Only ever accessed on the main thread, so opting out of the global-actor check is safe.
     nonisolated(unsafe) static let shared = DataStore()
 
+    /// Positional global shortcuts available per list — one per digit key (1…9).
+    static let maxShortcuts = HotKeyManager.maxPerGroup
+
     /// Hard cap on pins — one per ⌃⌥⌘1…9.
-    static let maxPins = 9
+    static let maxPins = maxShortcuts
 
     private(set) var projects: [Project] = []
     private(set) var entries: [TimeEntry] = []
@@ -21,7 +24,8 @@ final class DataStore {
     /// array re-maps the shortcuts. Reorderable exactly like `favorites`. Observable so the
     /// sidebar/menu lists and the hotkey layer react.
     private(set) var pins: [Pin] = []
-    /// Unlimited, reorderable saved sessions (no shortcut).
+    /// Unlimited, reorderable saved sessions. The first `maxShortcuts` are bound to ⇧⌃⌥⌘1…9 by the
+    /// same positional rule as pins (index i → ⇧⌃⌥⌘(i+1)); any beyond that are start-by-click only.
     private(set) var favorites: [Favorite] = []
 
     @ObservationIgnored private let directoryURL: URL
@@ -191,10 +195,8 @@ final class DataStore {
 
     func isRunning(pin: Pin) -> Bool { isRunning(projectID: pin.projectID, note: pin.note) }
 
-    /// Starts a session, or stops it if it's the one currently running.
-    func toggleSession(projectID: UUID, note: String) {
-        if isRunning(projectID: projectID, note: note) { stop() }
-        else { start(projectID: projectID, note: note) }
+    func isRunning(favorite: Favorite) -> Bool {
+        isRunning(projectID: favorite.projectID, note: favorite.note)
     }
 
     // MARK: - Pins (dense, ordered, capped at 9 — mirrors Favorites)
@@ -250,7 +252,14 @@ final class DataStore {
         if isRunning(pin: pins[index]) { stop() } else { startPin(at: index) }
     }
 
-    // MARK: - Favorites
+    // MARK: - Favorites (unlimited; the first 9 also carry a ⇧⌃⌥⌘N shortcut)
+
+    /// How many favorites currently have a ⇧⌃⌥⌘N shortcut. Favorites are unlimited but only nine
+    /// digit keys exist, so the list's first `maxShortcuts` entries are the ones bound to hotkeys.
+    var shortcutFavoriteCount: Int { min(favorites.count, Self.maxShortcuts) }
+
+    /// Whether the favorite at `index` has a ⇧⌃⌥⌘N shortcut (used for badges/tooltips).
+    func favoriteHasShortcut(at index: Int) -> Bool { index < Self.maxShortcuts }
 
     /// Adds a favorite (at `index`, or appended). Skips exact (project, description) duplicates.
     func addFavorite(at index: Int? = nil, projectID: UUID, note: String) {
@@ -270,10 +279,27 @@ final class DataStore {
         save()
     }
 
-    /// Reorders favorites via the List's native drag (system insertion indicator).
+    /// Reorders favorites via the List's native drag (system insertion indicator). Reorder does NOT
+    /// change favorites.count, so no hotkey re-registration is needed; only the index→favorite
+    /// (⇧⌃⌥⌘N) mapping shifts — dragging a favorite into the top nine gives it a shortcut.
     func moveFavorites(fromOffsets source: IndexSet, toOffset destination: Int) {
         favorites.move(fromOffsets: source, toOffset: destination)
         save()
+    }
+
+    /// Starts the favorite at `index` (stops + saves any running entry first). Index- and
+    /// project-guarded, exactly like `startPin(at:)`.
+    func startFavorite(at index: Int) {
+        guard favorites.indices.contains(index),
+              projects.contains(where: { $0.id == favorites[index].projectID }) else { return }
+        start(projectID: favorites[index].projectID, note: favorites[index].note)
+    }
+
+    /// Toggles the favorite at `index`: stops it if it's the running session, otherwise starts it.
+    /// A stale hotkey id past the current end of the list is a safe no-op.
+    func toggleFavorite(at index: Int) {
+        guard favorites.indices.contains(index) else { return }
+        if isRunning(favorite: favorites[index]) { stop() } else { startFavorite(at: index) }
     }
 
     // MARK: - Pin sanitisation
