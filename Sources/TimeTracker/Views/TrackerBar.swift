@@ -66,6 +66,7 @@ struct TrackerBar: View {
                     .font(.system(.title2, design: .monospaced))
                     .monospacedDigit()
             }
+            .help(DataStore.startNudgeHint)
             Button {
                 editingEntry = running
             } label: {

@@ -18,6 +18,18 @@ final class DataStore {
     /// Hard cap on pins — one per ⌃⌥⌘1…9.
     static let maxPins = maxShortcuts
 
+    /// How much working time one press of the ⇧⌃⌥⌘→/← global shortcuts adds or removes, by moving
+    /// the running timer's start.
+    static let startNudgeStep: TimeInterval = 60
+
+    /// One-line hint for those shortcuts, shown in the tracker bar and the menu-bar menu so they're
+    /// discoverable.
+    static var startNudgeHint: String {
+        let minutes = Int(startNudgeStep / 60)
+        return "Adjust running time by \(minutes) min: \(HotKeyCommand.runningStartEarlier.shortcutLabel) add · "
+            + "\(HotKeyCommand.runningStartLater.shortcutLabel) reduce"
+    }
+
     private(set) var projects: [Project] = []
     private(set) var entries: [TimeEntry] = []
     /// Dense, ordered, reorderable pins (0…9 elements). Index i is bound to ⌃⌥⌘(i+1); reordering the
@@ -130,6 +142,24 @@ final class DataStore {
         guard let idx = entries.firstIndex(where: { $0.isRunning }) else { return }
         // Guard against a clock that produced an end before start.
         entries[idx].end = max(date, entries[idx].start)
+    }
+
+    /// Shifts the running entry's start by `delta` (negative = earlier, i.e. a longer session) so a
+    /// late Start can be corrected without opening the editor. Backs the ⇧⌃⌥⌘→/← global shortcuts.
+    ///
+    /// A no-op — with no save — when nothing is running, which is what makes the shortcuts inert
+    /// while idle. Moving the start later never pushes it past now, matching the running-timer
+    /// editor's rule that a live start can't be in the future: the last step before now is clamped
+    /// to now (a zero-length session) instead of overshooting into negative elapsed time.
+    /// Returns whether the start actually moved.
+    @discardableResult
+    func nudgeRunningStart(by delta: TimeInterval) -> Bool {
+        guard let idx = entries.firstIndex(where: { $0.isRunning }) else { return false }
+        let newStart = min(entries[idx].start.addingTimeInterval(delta), Date())
+        guard newStart != entries[idx].start else { return false }
+        entries[idx].start = newStart
+        save()
+        return true
     }
 
     /// Deletes a single entry.
