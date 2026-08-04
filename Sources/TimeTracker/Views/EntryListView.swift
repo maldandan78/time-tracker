@@ -271,7 +271,7 @@ struct EntryListView: View {
 
     // MARK: - Headers
 
-    /// Top summary: today's total, and (for a single project) its all-time total. Ticks live.
+    /// Top summary: today's total and the current week's total for the selection. Ticks live.
     private var summaryHeader: some View {
         Section {
             TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -285,9 +285,9 @@ struct EntryListView: View {
                             .monospacedDigit()
                     }
                     HStack {
-                        Text("All time").foregroundStyle(.secondary)
+                        Text("This week").foregroundStyle(.secondary)
                         Spacer()
-                        Text(TimeFormat.hms(selectionTotal(asOf: now)))
+                        Text(TimeFormat.hms(weekTotal(asOf: now)))
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
                     }
@@ -424,8 +424,14 @@ struct EntryListView: View {
             .reduce(0) { $0 + $1.duration(asOf: now).rounded(.down) }
     }
 
-    private func selectionTotal(asOf now: Date) -> TimeInterval {
-        visibleEntries.reduce(0) { $0 + $1.duration(asOf: now).rounded(.down) }
+    /// Total for the calendar week containing `now`, using the locale's first weekday. Derived from
+    /// `now` on every tick, so it rolls over on its own when the week changes while the app is open.
+    private func weekTotal(asOf now: Date) -> TimeInterval {
+        let cal = Calendar.current
+        guard let week = cal.dateInterval(of: .weekOfYear, for: now) else { return 0 }
+        return visibleEntries
+            .filter { week.contains($0.start) }
+            .reduce(0) { $0 + $1.duration(asOf: now).rounded(.down) }
     }
 
     private struct ClusterKey: Hashable {
