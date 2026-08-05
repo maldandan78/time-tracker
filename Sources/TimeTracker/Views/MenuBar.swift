@@ -115,10 +115,11 @@ struct MenuBarContent: View {
         .keyboardShortcut("q")
     }
 
-    /// One quick-launch row: a ▶/⏹ state glyph, the description (or project name when blank), and
-    /// the item's global shortcut when it has one.
+    /// One quick-launch row: a ▶/⏹ state glyph, the description with its project name (or just the
+    /// project name when the description is blank), and the item's global shortcut when it has one.
     private func rowTitle(note: String, projectID: UUID, running: Bool, shortcut: String?) -> String {
-        let title = note.isEmpty ? store.projectName(projectID) : note
+        let project = store.projectName(projectID)
+        let title = note.isEmpty ? project : "\(note) · \(project)"
         let row = "\(running ? "⏹" : "▶") \(title)"
         guard let shortcut else { return row }
         return "\(row)  (\(shortcut))"
