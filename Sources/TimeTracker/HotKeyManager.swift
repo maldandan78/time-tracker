@@ -37,23 +37,30 @@ enum HotKeyGroup: CaseIterable, Sendable {
     func shortcutLabel(index: Int) -> String { "\(symbolPrefix)\(index + 1)" }
 }
 
-/// A global shortcut that runs one fixed command instead of driving a positional list. Both nudge
-/// the running timer's start time, in the direction the elapsed time moves: ⇧⌃⌥⌘→ adds working time
-/// by pulling the start earlier (for when you started working before you hit Start) and ⇧⌃⌥⌘←
-/// reduces it by pushing the start later. Unlike the list shortcuts these are registered
-/// unconditionally, and do nothing when no timer is running.
+/// A global shortcut that runs one fixed command instead of driving a positional list. All of them
+/// act on the running timer. ⇧⌃⌥⌘→/← nudge its start time, in the direction the elapsed time moves:
+/// → adds working time by pulling the start earlier (for when you started working before you hit
+/// Start) and ← reduces it by pushing the start later. ⇧⌃⌥⌘⌦ throws the session away entirely.
+/// Unlike the list shortcuts these are registered unconditionally, and do nothing when no timer is
+/// running.
 enum HotKeyCommand: CaseIterable, Sendable {
     case runningStartEarlier
     case runningStartLater
+    case discardRunning
 
+    /// Discard is on ⌦ (forward delete) rather than ⌫ (backspace): ⌫ is a popular target for
+    /// utilities that grab keys system-wide, and one holding ⇧⌃⌥⌘⌫ swallows it before it ever
+    /// reaches us — the registration still succeeds, so the shortcut just silently does nothing.
+    /// ⌦ is reached as fn+delete on a laptop.
     fileprivate var keyCode: Int {
         switch self {
         case .runningStartEarlier: return kVK_RightArrow
         case .runningStartLater: return kVK_LeftArrow
+        case .discardRunning: return kVK_ForwardDelete
         }
     }
 
-    /// ⇧⌃⌥⌘ — the same modifiers as the favorite shortcuts, on arrow keys instead of digits.
+    /// ⇧⌃⌥⌘ — the same modifiers as the favorite shortcuts, on non-digit keys.
     fileprivate var carbonModifiers: UInt32 {
         UInt32(cmdKey | optionKey | controlKey | shiftKey)
     }
@@ -63,6 +70,7 @@ enum HotKeyCommand: CaseIterable, Sendable {
         switch self {
         case .runningStartEarlier: return 301
         case .runningStartLater: return 302
+        case .discardRunning: return 303
         }
     }
 
@@ -71,12 +79,13 @@ enum HotKeyCommand: CaseIterable, Sendable {
         switch self {
         case .runningStartEarlier: return "⇧⌃⌥⌘→"
         case .runningStartLater: return "⇧⌃⌥⌘←"
+        case .discardRunning: return "⇧⌃⌥⌘⌦"
         }
     }
 }
 
 /// Registers up to nine system-wide hotkeys per group — ⌃⌥⌘1…9 for pins and ⇧⌃⌥⌘1…9 for
-/// favorites — plus the fixed command shortcuts (⇧⌃⌥⌘←/→), using the Carbon hotkey API. Carbon
+/// favorites — plus the fixed command shortcuts (⇧⌃⌥⌘←/→/⌦), using the Carbon hotkey API. Carbon
 /// hotkeys are global and require no Accessibility/Input-Monitoring permission; they fire as long
 /// as the app process is alive, even when it isn't frontmost. Exactly the configured number of
 /// hotkeys is registered in each group, so unused shortcuts stay free for other apps.

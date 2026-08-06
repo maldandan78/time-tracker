@@ -56,8 +56,9 @@ struct MenuBarContent: View {
                 Text(running.note)
             }
             Button("Stop Timer") { store.stop() }
-            // Disabled hint row — the nudge itself is a global shortcut, not a menu action.
+            // Disabled hint rows — these are global shortcuts, not menu actions.
             Text(DataStore.startNudgeHint)
+            Text(DataStore.discardRunningHint)
         } else {
             Text("No timer running")
         }

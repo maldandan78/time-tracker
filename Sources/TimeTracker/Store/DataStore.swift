@@ -30,6 +30,11 @@ final class DataStore {
             + "\(HotKeyCommand.runningStartLater.shortcutLabel) reduce"
     }
 
+    /// One-line hint for the discard shortcut, shown next to the nudge hint so it's discoverable.
+    static var discardRunningHint: String {
+        "Discard running timer: \(HotKeyCommand.discardRunning.shortcutLabel)"
+    }
+
     private(set) var projects: [Project] = []
     private(set) var entries: [TimeEntry] = []
     /// Dense, ordered, reorderable pins (0…9 elements). Index i is bound to ⌃⌥⌘(i+1); reordering the
@@ -158,6 +163,18 @@ final class DataStore {
         let newStart = min(entries[idx].start.addingTimeInterval(delta), Date())
         guard newStart != entries[idx].start else { return false }
         entries[idx].start = newStart
+        save()
+        return true
+    }
+
+    /// Stops the running entry *and* throws it away, so an accidental or mistaken session leaves no
+    /// record. Backs the ⇧⌃⌥⌘⌦ global shortcut. Only ever touches the running entry — finished
+    /// entries are never at risk — and is a no-op, with no save, when nothing is running, which is
+    /// what makes the shortcut inert while idle. Returns whether an entry was discarded.
+    @discardableResult
+    func discardRunning() -> Bool {
+        guard let idx = entries.firstIndex(where: { $0.isRunning }) else { return false }
+        entries.remove(at: idx)
         save()
         return true
     }

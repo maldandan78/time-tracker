@@ -41,13 +41,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         // Global ⇧⌃⌥⌘→ / ⇧⌃⌥⌘← → add / reduce working time on the running timer by moving its
-        // start earlier / later. Both are no-ops when no timer is running.
+        // start earlier / later; ⇧⌃⌥⌘⌦ → stop the running timer and throw the entry away. All are
+        // no-ops when no timer is running.
         HotKeyManager.shared.onCommand = { command in
             switch command {
             case .runningStartEarlier:
                 DataStore.shared.nudgeRunningStart(by: -DataStore.startNudgeStep)
             case .runningStartLater:
                 DataStore.shared.nudgeRunningStart(by: DataStore.startNudgeStep)
+            case .discardRunning:
+                DataStore.shared.discardRunning()
             }
         }
         HotKeyManager.shared.register(pins: DataStore.shared.pins.count,

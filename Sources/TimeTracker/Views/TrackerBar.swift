@@ -81,6 +81,7 @@ struct TrackerBar: View {
             }
             .buttonStyle(.borderedProminent)
             .keyboardShortcut(".", modifiers: .command)
+            .help(DataStore.discardRunningHint)
         }
     }
 
