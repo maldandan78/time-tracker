@@ -139,6 +139,15 @@ struct SidebarView: View {
             Button("Rename…") { editor = .rename(project) }
             Button("Delete…", role: .destructive) { deleting = project }
         }
+        // Swipe right to rename, matching the entry list's leading "Edit" swipe.
+        .swipeActions(edge: .leading) {
+            Button {
+                editor = .rename(project)
+            } label: {
+                Label("Rename", systemImage: "pencil")
+            }
+            .tint(.blue)
+        }
         .swipeActions(edge: .trailing) {
             Button(role: .destructive) { deleting = project } label: {
                 Label("Delete", systemImage: "trash")

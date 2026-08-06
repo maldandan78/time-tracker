@@ -168,7 +168,8 @@ struct EntryListView: View {
             }
             .tint(.blue)
         }
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+        // Full swipe deletes the whole cluster outright — no button tap, no confirmation.
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive) {
                 store.deleteEntries(cluster.entries.map(\.id))
             } label: {
@@ -222,7 +223,8 @@ struct EntryListView: View {
             }
             .tint(.blue)
         }
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+        // Full swipe deletes the entry outright — no button tap, no confirmation.
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive) {
                 store.deleteEntry(entry.id)
             } label: {
