@@ -3,9 +3,9 @@ import Foundation
 /// A tiny boolean search language for the entry-list filter.
 ///
 /// A query is a sequence of **terms**, each matched as a case-insensitive substring against a
-/// haystack (an entry's description + project name). Terms combine with:
+/// haystack (an entry's project name). Terms combine with:
 ///
-///   - `&`   — AND (also *implied* between adjacent terms, so `meet john` == `meet & john`)
+///   - `&`   — AND (also *implied* between adjacent terms, so `client admin` == `client & admin`)
 ///   - `|`   — OR
 ///   - `!`   — NOT (unary prefix)
 ///   - `( )` — grouping

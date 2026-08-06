@@ -52,24 +52,6 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <key>NSHighResolutionCapable</key>    <true/>
     <key>NSPrincipalClass</key>           <string>NSApplication</string>
     <key>LSApplicationCategoryType</key>  <string>public.app-category.productivity</string>
-    <key>UTExportedTypeDeclarations</key>
-    <array>
-        <dict>
-            <key>UTTypeIdentifier</key>   <string>com.almax.timetracker.entry</string>
-            <key>UTTypeDescription</key>  <string>Time Tracker Entry</string>
-            <key>UTTypeConformsTo</key>   <array><string>public.data</string></array>
-        </dict>
-        <dict>
-            <key>UTTypeIdentifier</key>   <string>com.almax.timetracker.pin</string>
-            <key>UTTypeDescription</key>  <string>Time Tracker Pin</string>
-            <key>UTTypeConformsTo</key>   <array><string>public.data</string></array>
-        </dict>
-        <dict>
-            <key>UTTypeIdentifier</key>   <string>com.almax.timetracker.favorite</string>
-            <key>UTTypeDescription</key>  <string>Time Tracker Favorite</string>
-            <key>UTTypeConformsTo</key>   <array><string>public.data</string></array>
-        </dict>
-    </array>
 </dict>
 </plist>
 PLIST

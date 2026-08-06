@@ -12,22 +12,18 @@ final class DataStore {
     /// Only ever accessed on the main thread, so opting out of the global-actor check is safe.
     nonisolated(unsafe) static let shared = DataStore()
 
-    /// Positional global shortcuts available per list — one per digit key (1…9).
-    static let maxShortcuts = HotKeyManager.maxPerGroup
-
-    /// Hard cap on pins — one per ⌃⌥⌘1…9.
-    static let maxPins = maxShortcuts
+    /// Positional global shortcuts available for the project list — one per digit key (1…9).
+    static let maxShortcuts = HotKeyManager.maxShortcuts
 
     /// How much working time one press of the ⇧⌃⌥⌘→/← global shortcuts adds or removes, by moving
     /// the running timer's start.
     static let startNudgeStep: TimeInterval = 60
 
-    /// One-line hint for those shortcuts, shown in the tracker bar and the menu-bar menu so they're
-    /// discoverable.
+    /// One-line hint naming those shortcuts, shown in the tracker bar and the menu-bar menu so
+    /// they're discoverable. Deliberately terse: it names the keys, not what each one does.
     static var startNudgeHint: String {
-        let minutes = Int(startNudgeStep / 60)
-        return "Adjust running time by \(minutes) min: \(HotKeyCommand.runningStartEarlier.shortcutLabel) add · "
-            + "\(HotKeyCommand.runningStartLater.shortcutLabel) reduce"
+        "Adjust running time: \(HotKeyCommand.symbolPrefix)"
+            + "\(HotKeyCommand.runningStartLater.keyLabel)\(HotKeyCommand.runningStartEarlier.keyLabel)"
     }
 
     /// One-line hint for the discard shortcut, shown next to the nudge hint so it's discoverable.
@@ -35,15 +31,12 @@ final class DataStore {
         "Discard running timer: \(HotKeyCommand.discardRunning.shortcutLabel)"
     }
 
+    /// Ordered, reorderable projects — this list *is* the quick-launch list. Index i (for
+    /// i < `maxShortcuts`) is bound to ⌃⌥⌘(i+1); reordering the array re-maps the shortcuts, which
+    /// is how the user chooses which nine projects get one. Observable so the sidebar, the menu-bar
+    /// menu, and the hotkey layer all react.
     private(set) var projects: [Project] = []
     private(set) var entries: [TimeEntry] = []
-    /// Dense, ordered, reorderable pins (0…9 elements). Index i is bound to ⌃⌥⌘(i+1); reordering the
-    /// array re-maps the shortcuts. Reorderable exactly like `favorites`. Observable so the
-    /// sidebar/menu lists and the hotkey layer react.
-    private(set) var pins: [Pin] = []
-    /// Unlimited, reorderable saved sessions. The first `maxShortcuts` are bound to ⇧⌃⌥⌘1…9 by the
-    /// same positional rule as pins (index i → ⇧⌃⌥⌘(i+1)); any beyond that are start-by-click only.
-    private(set) var favorites: [Favorite] = []
 
     @ObservationIgnored private let directoryURL: URL
     @ObservationIgnored private let fileURL: URL
@@ -69,6 +62,7 @@ final class DataStore {
     // MARK: - Projects
 
     /// Adds a project. Returns false if the (trimmed) name is empty or a duplicate.
+    /// New projects are appended, so an existing project never loses its ⌃⌥⌘N.
     @discardableResult
     func addProject(name: String) -> Bool {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -91,16 +85,17 @@ final class DataStore {
         return true
     }
 
-    /// Deletes a project and cascades to all of its time entries, pins, and favorites.
+    /// Deletes a project and cascades to all of its time entries — including a running one, which
+    /// would otherwise keep ticking against a project that no longer exists.
     func deleteProject(_ id: UUID) {
         projects.removeAll { $0.id == id }
         entries.removeAll { $0.projectID == id }
-        pins.removeAll { $0.projectID == id }
-        favorites.removeAll { $0.projectID == id }
         save()
     }
 
-    /// Reorders projects in the sidebar. The array order is the persisted display order.
+    /// Reorders projects in the sidebar. The array order is the persisted display order *and* the
+    /// ⌃⌥⌘1…9 mapping, so a drag can hand a shortcut to a different project. The count doesn't
+    /// change, so no hotkey re-registration is needed.
     func moveProjects(fromOffsets source: IndexSet, toOffset destination: Int) {
         projects.move(fromOffsets: source, toOffset: destination)
         save()
@@ -121,19 +116,26 @@ final class DataStore {
         entries.reduce(0) { $0 + ($1.projectID == projectID ? 1 : 0) }
     }
 
+    // MARK: - Positional shortcuts
+
+    /// How many projects currently have a ⌃⌥⌘N shortcut. Projects are unlimited but only nine digit
+    /// keys exist, so the list's first `maxShortcuts` entries are the ones bound to hotkeys. This is
+    /// also what the app re-registers on, so it must change only when the *count* changes.
+    var shortcutProjectCount: Int { min(projects.count, Self.maxShortcuts) }
+
+    /// Whether the project at `index` has a ⌃⌥⌘N shortcut (used for badges and tooltips).
+    func projectHasShortcut(at index: Int) -> Bool { index < Self.maxShortcuts }
+
     // MARK: - Timer
 
-    /// Starts tracking. Stops any currently-running entry first (single-timer rule).
-    func start(projectID: UUID, note: String) {
+    /// Starts tracking a project. Stops any currently-running entry first (single-timer rule), so
+    /// re-starting the project that is already running simply begins a fresh entry — the only way
+    /// to reach that is the ▶ button on a history row, and `toggleProject(at:)` covers the
+    /// stop-instead case for the shortcuts and the sidebar buttons.
+    func start(projectID: UUID) {
         let now = Date()
         stopRunning(asOf: now)
-        let entry = TimeEntry(
-            projectID: projectID,
-            note: note.trimmingCharacters(in: .whitespacesAndNewlines),
-            start: now,
-            end: nil
-        )
-        entries.append(entry)
+        entries.append(TimeEntry(projectID: projectID, start: now, end: nil))
         save()
     }
 
@@ -179,6 +181,23 @@ final class DataStore {
         return true
     }
 
+    /// Starts the project at `index` (stops + saves any running entry first). Index-guarded, so a
+    /// stale hotkey id past the current end of the list is a safe no-op.
+    func startProject(at index: Int) {
+        guard projects.indices.contains(index) else { return }
+        start(projectID: projects[index].id)
+    }
+
+    /// Toggles the project at `index`: stops it if it's the running session, otherwise starts it.
+    /// This is what ⌃⌥⌘N, the sidebar play/stop buttons, and the menu-bar rows all call, so the same
+    /// key both starts and stops. A stale index is a safe no-op.
+    func toggleProject(at index: Int) {
+        guard projects.indices.contains(index) else { return }
+        if isRunning(projectID: projects[index].id) { stop() } else { startProject(at: index) }
+    }
+
+    // MARK: - Entries
+
     /// Deletes a single entry.
     func deleteEntry(_ id: UUID) {
         entries.removeAll { $0.id == id }
@@ -194,39 +213,36 @@ final class DataStore {
 
     func entry(_ id: UUID) -> TimeEntry? { entries.first { $0.id == id } }
 
-    /// Edits a finished entry's project, description, start, and end. `end` is clamped to be no
-    /// earlier than `start`. (Pass `end: nil` only when you intend the entry to be running.)
-    func updateEntry(_ id: UUID, projectID: UUID, note: String, start: Date, end: Date?) {
+    /// Edits a finished entry's project, start, and end. `end` is clamped to be no earlier than
+    /// `start`. (Pass `end: nil` only when you intend the entry to be running.)
+    func updateEntry(_ id: UUID, projectID: UUID, start: Date, end: Date?) {
         guard let idx = entries.firstIndex(where: { $0.id == id }) else { return }
         entries[idx].projectID = projectID
-        entries[idx].note = note.trimmingCharacters(in: .whitespacesAndNewlines)
         entries[idx].start = start
         entries[idx].end = end.map { max($0, start) }
         save()
     }
 
-    /// Edits project/description/start while leaving the entry's running/finished state untouched.
+    /// Edits project/start while leaving the entry's running/finished state untouched.
     /// Used by the running-timer editor so that if the entry is stopped underneath an open sheet
-    /// (e.g. a pin hotkey fires), saving can't resurrect it into a second concurrent running timer.
-    func updateEntryDetails(_ id: UUID, projectID: UUID, note: String, start: Date) {
+    /// (e.g. a project hotkey fires), saving can't resurrect it into a second concurrent running
+    /// timer.
+    func updateEntryDetails(_ id: UUID, projectID: UUID, start: Date) {
         guard let idx = entries.firstIndex(where: { $0.id == id }) else { return }
         entries[idx].projectID = projectID
-        entries[idx].note = note.trimmingCharacters(in: .whitespacesAndNewlines)
         entries[idx].start = start
         if let end = entries[idx].end { entries[idx].end = max(end, start) }
         save()
     }
 
-    /// Retitles several entries at once — sets a new project + description on all of them while
-    /// leaving each entry's start/end untouched. Backs the grouped-entry editor, which edits a whole
-    /// cluster's project/description but never its times.
-    func updateEntries(_ ids: [UUID], projectID: UUID, note: String) {
+    /// Re-projects several entries at once — moves all of them to a new project while leaving each
+    /// entry's start/end untouched. Backs the grouped-entry editor, which edits a whole cluster's
+    /// project but never its times.
+    func updateEntries(_ ids: [UUID], projectID: UUID) {
         let set = Set(ids)
-        let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
         var changed = false
         for i in entries.indices where set.contains(entries[i].id) {
             entries[i].projectID = projectID
-            entries[i].note = trimmed
             changed = true
         }
         if changed { save() }
@@ -234,135 +250,9 @@ final class DataStore {
 
     // MARK: - Running helpers
 
-    /// Whether the currently-running entry matches this project + description.
-    func isRunning(projectID: UUID, note: String) -> Bool {
-        guard let running = runningEntry else { return false }
-        return running.projectID == projectID && running.note == note
-    }
-
-    func isRunning(pin: Pin) -> Bool { isRunning(projectID: pin.projectID, note: pin.note) }
-
-    func isRunning(favorite: Favorite) -> Bool {
-        isRunning(projectID: favorite.projectID, note: favorite.note)
-    }
-
-    // MARK: - Pins (dense, ordered, capped at 9 — mirrors Favorites)
-
-    /// Adds a pin (inserted at `index`, or appended). Skips exact (project, description)
-    /// duplicates and is a no-op once at `maxPins`, so ⌃⌥⌘N never maps to an ambiguous or
-    /// overflowed session. Array order == badge order (pin i → ⌃⌥⌘(i+1)).
-    func addPin(at index: Int? = nil, projectID: UUID, note: String) {
-        let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !pins.contains(where: { $0.projectID == projectID && $0.note == trimmed }) else { return }
-        guard pins.count < Self.maxPins else { return }
-        let pin = Pin(projectID: projectID, note: trimmed)
-        if let index, index >= 0, index <= pins.count {
-            pins.insert(pin, at: index)
-        } else {
-            pins.append(pin)
-        }
-        save()
-    }
-
-    /// Removes the pin with this id (signature unchanged so the drag-out remove in MainPane works).
-    func removePin(_ id: UUID) {
-        pins.removeAll { $0.id == id }
-        save()
-    }
-
-    /// Edits a pin's project + description in place (used by the edit sheet).
-    func updatePin(_ id: UUID, projectID: UUID, note: String) {
-        guard let idx = pins.firstIndex(where: { $0.id == id }) else { return }
-        pins[idx].projectID = projectID
-        pins[idx].note = note.trimmingCharacters(in: .whitespacesAndNewlines)
-        save()
-    }
-
-    /// Reorders pins via the List's native drag (System insertion indicator). Reorder does NOT change
-    /// pins.count, so no hotkey re-registration is needed; only the index→pin (⌃⌥⌘N) mapping shifts.
-    func movePins(fromOffsets source: IndexSet, toOffset destination: Int) {
-        pins.move(fromOffsets: source, toOffset: destination)
-        save()
-    }
-
-    /// Starts the pin at `index` (stops + saves any running entry first). Index- and project-guarded.
-    func startPin(at index: Int) {
-        guard pins.indices.contains(index),
-              projects.contains(where: { $0.id == pins[index].projectID }) else { return }
-        start(projectID: pins[index].projectID, note: pins[index].note)
-    }
-
-    /// Toggles the pin at `index`: stops it if it's the running session, otherwise starts it.
-    /// A stale hotkey id past the current end of the list is a safe no-op.
-    func togglePin(at index: Int) {
-        guard pins.indices.contains(index) else { return }
-        if isRunning(pin: pins[index]) { stop() } else { startPin(at: index) }
-    }
-
-    // MARK: - Favorites (unlimited; the first 9 also carry a ⇧⌃⌥⌘N shortcut)
-
-    /// How many favorites currently have a ⇧⌃⌥⌘N shortcut. Favorites are unlimited but only nine
-    /// digit keys exist, so the list's first `maxShortcuts` entries are the ones bound to hotkeys.
-    var shortcutFavoriteCount: Int { min(favorites.count, Self.maxShortcuts) }
-
-    /// Whether the favorite at `index` has a ⇧⌃⌥⌘N shortcut (used for badges/tooltips).
-    func favoriteHasShortcut(at index: Int) -> Bool { index < Self.maxShortcuts }
-
-    /// Adds a favorite (at `index`, or appended). Skips exact (project, description) duplicates.
-    func addFavorite(at index: Int? = nil, projectID: UUID, note: String) {
-        let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !favorites.contains(where: { $0.projectID == projectID && $0.note == trimmed }) else { return }
-        let favorite = Favorite(projectID: projectID, note: trimmed)
-        if let index, index >= 0, index <= favorites.count {
-            favorites.insert(favorite, at: index)
-        } else {
-            favorites.append(favorite)
-        }
-        save()
-    }
-
-    func removeFavorite(_ id: UUID) {
-        favorites.removeAll { $0.id == id }
-        save()
-    }
-
-    /// Reorders favorites via the List's native drag (system insertion indicator). Reorder does NOT
-    /// change favorites.count, so no hotkey re-registration is needed; only the index→favorite
-    /// (⇧⌃⌥⌘N) mapping shifts — dragging a favorite into the top nine gives it a shortcut.
-    func moveFavorites(fromOffsets source: IndexSet, toOffset destination: Int) {
-        favorites.move(fromOffsets: source, toOffset: destination)
-        save()
-    }
-
-    /// Starts the favorite at `index` (stops + saves any running entry first). Index- and
-    /// project-guarded, exactly like `startPin(at:)`.
-    func startFavorite(at index: Int) {
-        guard favorites.indices.contains(index),
-              projects.contains(where: { $0.id == favorites[index].projectID }) else { return }
-        start(projectID: favorites[index].projectID, note: favorites[index].note)
-    }
-
-    /// Toggles the favorite at `index`: stops it if it's the running session, otherwise starts it.
-    /// A stale hotkey id past the current end of the list is a safe no-op.
-    func toggleFavorite(at index: Int) {
-        guard favorites.indices.contains(index) else { return }
-        if isRunning(favorite: favorites[index]) { stop() } else { startFavorite(at: index) }
-    }
-
-    // MARK: - Pin sanitisation
-
-    /// Dedups persisted pins by (project, description) and caps to `maxPins`, PRESERVING array order.
-    /// Replaces the old slot mapping — legacy per-pin `slot` keys are already ignored at decode, so
-    /// order is simply the stored array order. Guards a hand-edited file with duplicates or > 9 pins.
-    private static func sanitizedPins(from raw: [Pin]) -> [Pin] {
-        var result: [Pin] = []
-        var seen = Set<String>()
-        for pin in raw {
-            guard result.count < maxPins else { break }
-            guard seen.insert("\(pin.projectID.uuidString)|\(pin.note)").inserted else { continue }
-            result.append(pin)
-        }
-        return result
+    /// Whether the currently-running entry belongs to this project.
+    func isRunning(projectID: UUID) -> Bool {
+        runningEntry?.projectID == projectID
     }
 
     // MARK: - Export
@@ -370,7 +260,7 @@ final class DataStore {
     /// Writes the whole data document as JSON to ~/Downloads and returns the file URL.
     @discardableResult
     func exportData() -> URL? {
-        let snapshot = AppData(projects: projects, entries: entries, pins: pins, favorites: favorites)
+        let snapshot = AppData(projects: projects, entries: entries)
         guard let data = try? JSONEncoder.appEncoder.encode(snapshot) else { return nil }
         let fm = FileManager.default
         let downloads = fm.urls(for: .downloadsDirectory, in: .userDomainMask).first
@@ -398,8 +288,6 @@ final class DataStore {
             let decoded = try JSONDecoder.appDecoder.decode(AppData.self, from: data)
             self.projects = decoded.projects
             self.entries = decoded.entries
-            self.pins = Self.sanitizedPins(from: decoded.pins)
-            self.favorites = decoded.favorites
         } catch {
             // Quarantine the unreadable file under a unique name (never delete a prior backup)
             // and start fresh. If we can't move it aside, disable persistence so the next
@@ -418,7 +306,7 @@ final class DataStore {
 
     private func save() {
         guard canPersist else { return }
-        let snapshot = AppData(projects: projects, entries: entries, pins: pins, favorites: favorites)
+        let snapshot = AppData(projects: projects, entries: entries)
         do {
             try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
             let data = try JSONEncoder.appEncoder.encode(snapshot)

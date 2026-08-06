@@ -2,14 +2,14 @@ import SwiftUI
 
 /// Day-grouped list of time entries for the current sidebar selection.
 ///
-/// Entries that share a project + description within a day are clustered (Toggl-style) into
-/// one expandable row with a count and combined duration. Every row has a ▶ button that
-/// re-starts a new entry with that project + description. Durations show seconds (H:MM:SS).
+/// Entries that share a project within a day are clustered (Toggl-style) into one expandable row
+/// with a count and combined duration. Every row has a ▶ button that starts a new entry for that
+/// project. Durations show seconds (H:MM:SS).
 struct EntryListView: View {
     @Environment(DataStore.self) private var store
     let selection: SidebarItem?
     /// Toolbar search query (owned by MainPane). Space-separated tokens are matched (AND) against
-    /// each entry's description + project name; empty means no filtering.
+    /// each entry's project name; empty means no filtering.
     var searchText: String = ""
 
     @State private var expanded: Set<String> = []
@@ -32,15 +32,20 @@ struct EntryListView: View {
                     ContentUnavailableView(
                         "No time entries yet",
                         systemImage: "clock",
-                        description: Text("Start a timer above to track your first entry.")
+                        // Names a start path that actually exists: this empty state can only show
+                        // when nothing is running, so there is no tracker bar above the list.
+                        description: Text("Press ▶ next to a project in the sidebar — or "
+                                          + "\(ProjectHotKey.symbolPrefix)1…\(DataStore.maxShortcuts) "
+                                          + "from any app — to track your first entry.")
                     )
                 }
             } else {
                 list
             }
         }
-        // Always fill the pane so the tracker bar stays pinned at the top (the empty-state
-        // ContentUnavailableView otherwise collapses the VStack and centers it vertically).
+        // Fill the pane so the empty state centers in the whole detail area instead of collapsing
+        // to its intrinsic height (and so the running-timer bar, when there is one, stays pinned
+        // at the top rather than floating with the list).
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // Refresh the "Today" reference when the day rolls over. `NSCalendarDayChanged` fires at
         // midnight (and on wake if the day changed while asleep); re-checking on scene activation
@@ -95,7 +100,7 @@ struct EntryListView: View {
         }
         .sheet(item: $editingGroup) { group in
             GroupEditorSheet(entryIDs: group.entryIDs, count: group.count,
-                             projectID: group.projectID, note: group.note)
+                             projectID: group.projectID)
                 .environment(store)
         }
     }
@@ -137,24 +142,16 @@ struct EntryListView: View {
             .buttonStyle(.plain)
             .help(expanded.contains(cluster.id) ? "Collapse" : "Expand")
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(cluster.note.isEmpty ? "—" : cluster.note)
-                if showProject {
-                    Text(store.projectName(cluster.projectID))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
+            Text(store.projectName(cluster.projectID))
 
             Spacer(minLength: 12)
             duration(of: { cluster.total(asOf: $0) }, live: cluster.hasRunning, running: cluster.hasRunning)
             // No ▶ when this cluster's session is running (kept invisible to preserve alignment).
-            startButton(projectID: cluster.projectID, note: cluster.note)
+            startButton(projectID: cluster.projectID)
                 .opacity(cluster.hasRunning ? 0 : 1)
                 .allowsHitTesting(!cluster.hasRunning)
         }
         .padding(.vertical, 2)
-        .draggable(EntryDrag(projectID: cluster.projectID, note: cluster.note))
         .contextMenu {
             Button("Edit \(cluster.count) Entries…") {
                 editingGroup = EditingGroup(cluster: cluster)
@@ -191,12 +188,8 @@ struct EntryListView: View {
                 }
             } else {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(entry.note.isEmpty ? "—" : entry.note)
+                    Text(store.projectName(entry.projectID))
                     HStack(spacing: 6) {
-                        if showProject {
-                            Text(store.projectName(entry.projectID))
-                            Text("·")
-                        }
                         Text(timeRange(entry))
                         if entry.isRunning {
                             Text("· running").foregroundStyle(.green)
@@ -209,13 +202,12 @@ struct EntryListView: View {
             Spacer(minLength: 12)
             duration(of: { entry.duration(asOf: $0) }, live: entry.isRunning, running: entry.isRunning)
             // No ▶ on the running entry itself (kept invisible to preserve alignment).
-            startButton(projectID: entry.projectID, note: entry.note)
+            startButton(projectID: entry.projectID)
                 .opacity(entry.isRunning ? 0 : 1)
                 .allowsHitTesting(!entry.isRunning)
         }
         .padding(.vertical, 2)
         .padding(.leading, indented ? 26 : 0)
-        .draggable(EntryDrag(projectID: entry.projectID, note: entry.note))
         .contextMenu {
             Button("Edit…") { editingEntry = entry }
             Button("Delete…", role: .destructive) {
@@ -239,17 +231,17 @@ struct EntryListView: View {
         }
     }
 
-    /// ▶ Re-start a new entry with the same project + description (stops any running timer).
-    private func startButton(projectID: UUID, note: String) -> some View {
+    /// ▶ Start a new entry for the same project (stops any running timer).
+    private func startButton(projectID: UUID) -> some View {
         Button {
-            store.start(projectID: projectID, note: note)
+            store.start(projectID: projectID)
         } label: {
             Image(systemName: "play.circle.fill")
                 .font(.title3)
                 .foregroundStyle(.tint)
         }
         .buttonStyle(.borderless)
-        .help("Start a new entry with this project and description")
+        .help("Start a new entry with this project")
     }
 
     // MARK: - Durations
@@ -360,21 +352,19 @@ struct EntryListView: View {
         }
     }
 
-    /// A snapshot of the grouped-entry cluster currently being edited (project/description only).
+    /// A snapshot of the grouped-entry cluster currently being edited (project only).
     /// Captures the member ids up front so the edit applies even if the list recomputes underneath.
     private struct EditingGroup: Identifiable {
         let id: String
         let entryIDs: [UUID]
         let count: Int
         let projectID: UUID
-        let note: String
 
         init(cluster: EntryCluster) {
             id = cluster.id
             entryIDs = cluster.entries.map(\.id)
             count = cluster.count
             projectID = cluster.projectID
-            note = cluster.note
         }
     }
 
@@ -388,11 +378,6 @@ struct EntryListView: View {
     }
 
     // MARK: - Data
-
-    private var showProject: Bool {
-        if case .project = selection { return false }
-        return true
-    }
 
     private var visibleEntries: [TimeEntry] {
         let scoped: [TimeEntry]
@@ -408,13 +393,13 @@ struct EntryListView: View {
         !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    /// Case-insensitive boolean search over each entry's description + project name. Adjacent terms
-    /// AND together, and `&`, `|`, `!`, `( )` are honored (see `SearchQuery`). So `meet john` matches
-    /// "Meeting with John", `standup | review` matches either, and `bug !fixed` excludes "fixed".
+    /// Case-insensitive boolean search over each entry's project name. Adjacent terms AND together,
+    /// and `&`, `|`, `!`, `( )` are honored (see `SearchQuery`). So `time track` matches
+    /// "Time Tracker", `client | admin` matches either, and `web !legacy` excludes "Legacy Web".
     private func filtered(_ entries: [TimeEntry]) -> [TimeEntry] {
         let query = SearchQuery(searchText)
         guard query.isActive else { return entries }
-        return entries.filter { query.matches("\($0.note) \(store.projectName($0.projectID))") }
+        return entries.filter { query.matches(store.projectName($0.projectID)) }
     }
 
     private func todayTotal(asOf now: Date) -> TimeInterval {
@@ -434,18 +419,18 @@ struct EntryListView: View {
             .reduce(0) { $0 + $1.duration(asOf: now).rounded(.down) }
     }
 
+    /// What makes two same-day entries the same cluster. With descriptions gone, that is the
+    /// project alone.
     private struct ClusterKey: Hashable {
         let projectID: UUID
-        let note: String
     }
 
     private struct EntryCluster: Identifiable {
         let day: Date
         let projectID: UUID
-        let note: String
         let entries: [TimeEntry]   // sorted by start descending
 
-        var id: String { "\(Int(day.timeIntervalSinceReferenceDate))|\(projectID.uuidString)|\(note)" }
+        var id: String { "\(Int(day.timeIntervalSinceReferenceDate))|\(projectID.uuidString)" }
         var count: Int { entries.count }
         var hasRunning: Bool { entries.contains { $0.isRunning } }
         var latestStart: Date { entries.first?.start ?? .distantPast }
@@ -471,13 +456,12 @@ struct EntryListView: View {
         let byDay = Dictionary(grouping: visibleEntries) { cal.startOfDay(for: $0.start) }
         return byDay.map { day, dayEntries in
             let byCluster = Dictionary(grouping: dayEntries) {
-                ClusterKey(projectID: $0.projectID, note: $0.note)
+                ClusterKey(projectID: $0.projectID)
             }
             let clusters = byCluster
                 .map { key, entries in
                     EntryCluster(day: day,
                                  projectID: key.projectID,
-                                 note: key.note,
                                  entries: entries.sorted { $0.start > $1.start })
                 }
                 .sorted { $0.latestStart > $1.latestStart }

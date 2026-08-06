@@ -32,13 +32,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
 
-        // Global ⌃⌥⌘1…N → toggle the matching pin, ⇧⌃⌥⌘1…N → the matching favorite:
-        // start it, or stop it if it's already running.
-        HotKeyManager.shared.onFire = { group, number in
-            switch group {
-            case .pin: DataStore.shared.togglePin(at: number - 1)
-            case .favorite: DataStore.shared.toggleFavorite(at: number - 1)
-            }
+        // Global ⌃⌥⌘1…N → toggle the project in that position of the sidebar list: start it, or
+        // stop it if it's already running.
+        HotKeyManager.shared.onFire = { number in
+            DataStore.shared.toggleProject(at: number - 1)
         }
         // Global ⇧⌃⌥⌘→ / ⇧⌃⌥⌘← → add / reduce working time on the running timer by moving its
         // start earlier / later; ⇧⌃⌥⌘⌦ → stop the running timer and throw the entry away. All are
@@ -53,11 +50,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 DataStore.shared.discardRunning()
             }
         }
-        HotKeyManager.shared.register(pins: DataStore.shared.pins.count,
-                                      favorites: DataStore.shared.shortcutFavoriteCount)
+        HotKeyManager.shared.register(projects: DataStore.shared.shortcutProjectCount)
     }
 
-    // Stay alive when the window is closed so the global pin/favorite hotkeys keep working.
+    // Stay alive when the window is closed so the global project hotkeys keep working.
     // The window reopens on dock-icon click; ⌘Q quits fully.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false

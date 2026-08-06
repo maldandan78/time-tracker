@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Edits one time entry — project, description, and start/end.
+/// Edits one time entry — project and start/end.
 /// For the running entry, the end is omitted (it stays running) and only the start is editable,
 /// which lets you correct the elapsed time of the live timer.
 struct EntryEditorSheet: View {
@@ -10,14 +10,12 @@ struct EntryEditorSheet: View {
     let entry: TimeEntry
 
     @State private var projectID: UUID
-    @State private var note: String
     @State private var start: Date
     @State private var end: Date
 
     init(entry: TimeEntry) {
         self.entry = entry
         _projectID = State(initialValue: entry.projectID)
-        _note = State(initialValue: entry.note)
         _start = State(initialValue: entry.start)
         _end = State(initialValue: entry.end ?? Date())
     }
@@ -35,10 +33,6 @@ struct EntryEditorSheet: View {
                         }
                     }
                     .labelsHidden()
-                }
-                field("Description") {
-                    TextField("What are you working on?", text: $note)
-                        .textFieldStyle(.roundedBorder)
                 }
                 field("Start") {
                     DatePicker("Start", selection: $start, displayedComponents: [.date, .hourAndMinute])
@@ -75,7 +69,6 @@ struct EntryEditorSheet: View {
         .onAppear {
             // Reuse-safety: re-seed from the entry each time the sheet appears.
             projectID = entry.projectID
-            note = entry.note
             start = entry.start
             end = entry.end ?? Date()
         }
@@ -89,13 +82,8 @@ struct EntryEditorSheet: View {
         }
     }
 
-    private var trimmedNote: String {
-        note.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
     private var validationProblem: String? {
         if store.project(projectID) == nil { return "Choose a project." }
-        if trimmedNote.isEmpty { return "A description is required." }
         if entry.isRunning {
             if start > Date() { return "Start can’t be in the future for a running timer." }
         } else if end < start {
@@ -108,19 +96,19 @@ struct EntryEditorSheet: View {
         guard validationProblem == nil else { return }
         if entry.isRunning {
             // Running editor: never force end=nil from this (possibly stale) snapshot — only update
-            // details, preserving the entry's live state so a pin fired under the sheet can't
-            // resurrect a stopped entry into a second running timer.
-            store.updateEntryDetails(entry.id, projectID: projectID, note: trimmedNote, start: start)
+            // details, preserving the entry's live state so a project shortcut fired under the sheet
+            // can't resurrect a stopped entry into a second running timer.
+            store.updateEntryDetails(entry.id, projectID: projectID, start: start)
         } else {
-            store.updateEntry(entry.id, projectID: projectID, note: trimmedNote, start: start, end: end)
+            store.updateEntry(entry.id, projectID: projectID, start: start, end: end)
         }
         dismiss()
     }
 }
 
-/// Edits a whole group (cluster) of entries at once — project + description only, never time.
-/// The new project/description is applied to every entry in the group; each entry keeps its own
-/// start/end. (Retitling to another (project, description) simply re-groups the entries.)
+/// Edits a whole group (cluster) of entries at once — project only, never time.
+/// The new project is applied to every entry in the group; each entry keeps its own start/end.
+/// (Re-projecting simply re-groups the entries under the new project.)
 struct GroupEditorSheet: View {
     @Environment(DataStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -128,18 +116,14 @@ struct GroupEditorSheet: View {
     let entryIDs: [UUID]
     let count: Int
     private let initialProjectID: UUID
-    private let initialNote: String
 
     @State private var projectID: UUID
-    @State private var note: String
 
-    init(entryIDs: [UUID], count: Int, projectID: UUID, note: String) {
+    init(entryIDs: [UUID], count: Int, projectID: UUID) {
         self.entryIDs = entryIDs
         self.count = count
         self.initialProjectID = projectID
-        self.initialNote = note
         _projectID = State(initialValue: projectID)
-        _note = State(initialValue: note)
     }
 
     var body: some View {
@@ -158,10 +142,6 @@ struct GroupEditorSheet: View {
                         }
                     }
                     .labelsHidden()
-                }
-                field("Description") {
-                    TextField("What are you working on?", text: $note)
-                        .textFieldStyle(.roundedBorder)
                 }
             }
 
@@ -187,7 +167,6 @@ struct GroupEditorSheet: View {
             // Reuse-safety: re-seed from the group each time the sheet appears (a reused
             // .sheet(item:) view otherwise keeps the previously edited group's values).
             projectID = initialProjectID
-            note = initialNote
         }
     }
 
@@ -199,19 +178,14 @@ struct GroupEditorSheet: View {
         }
     }
 
-    private var trimmedNote: String {
-        note.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
     private var validationProblem: String? {
         if store.project(projectID) == nil { return "Choose a project." }
-        if trimmedNote.isEmpty { return "A description is required." }
         return nil
     }
 
     private func save() {
         guard validationProblem == nil else { return }
-        store.updateEntries(entryIDs, projectID: projectID, note: trimmedNote)
+        store.updateEntries(entryIDs, projectID: projectID)
         dismiss()
     }
 }

@@ -4,11 +4,36 @@ A small native macOS time tracker built with SwiftUI — no Xcode required, buil
 
 ## What it does
 
-- **Projects** (name only) you create in the sidebar.
-- A single **live timer** — pick a project, type a description, hit **Start**. Starting a new timer stops the running one.
-- Entries are **description + project**, grouped **by day** with per-day subtotals and a live **Today** total.
-- Delete a single entry, or delete a project (which removes its entries). No editing of past entries.
-- Data is stored as readable JSON at `~/Library/Application Support/TimeTracker/data.json`.
+**Projects only.** A time entry is just *project + start + end* — there are no descriptions or notes
+to type. You start a timer **for a project**, and that's the whole decision.
+
+- **Projects** (name only) live in the sidebar. The list is reorderable, and every project in it is a
+  quick-launch pin: each row carries a ▶ / ⏹ button that starts or stops that project's timer.
+- **Global shortcuts, assigned by position.** The **first nine** projects in the sidebar get
+  `⌃⌥⌘1` … `⌃⌥⌘9` — press one from any app to start that project, press it again to stop.
+  The binding follows the *position*, not the project, so **drag the list to choose which nine get a
+  shortcut**. Projects past the ninth work normally, just without a hotkey.
+- **A single live timer.** Starting a project stops whatever was running first. While a timer runs, a
+  bar above the history shows it and lets you edit it or **Stop** it; idle, there's no bar at
+  all and the history fills the pane — every way to *start* a timer already lives elsewhere.
+- **Running-timer shortcuts** work globally too, so you can fix a late start without switching apps:
+  - `⇧⌃⌥⌘→` — add a minute (moves the start earlier)
+  - `⇧⌃⌥⌘←` — reduce a minute (never past "now")
+  - `⇧⌃⌥⌘⌦` — discard the running timer entirely, recording nothing
+    (that's forward-delete — `fn`+`delete` on a laptop — deliberately *not* backspace, which other
+    system-wide utilities like to grab before it ever reaches us)
+- **History grouped by day**, and within each day **clustered by project**: repeated sessions on the
+  same project collapse into one expandable row with a count and a combined duration. Each day has a
+  subtotal, and the header above the list shows **Today** and **This week**.
+- **Edit and delete** freely: change an entry's project, start, or end; re-project a whole cluster at
+  once; delete a single entry, a whole group, or a project (which cascades to its entries, with a
+  confirmation that tells you how many).
+- **Search** the history by project name, with a small boolean syntax — `&` (also implied by a
+  space), `|`, `!`, and parentheses, e.g. `client | !internal`.
+- **Menu-bar extra** showing the live elapsed time (optionally with the project name), a Stop button,
+  and every project as a one-click start/stop row with its shortcut label.
+- Data is stored as readable JSON at `~/Library/Application Support/TimeTracker/data.json`, written
+  atomically on every change. **Export** from the sidebar drops a timestamped copy in `~/Downloads`.
 - A running timer survives quitting/relaunching — it resumes counting from its original start time.
 
 ## Requirements
@@ -37,11 +62,19 @@ swift run
 
 ```
 Sources/TimeTracker/
-├── TimeTrackerApp.swift     # @main App + AppDelegate
-├── Models/Models.swift      # Project, TimeEntry, AppData, formatting
-├── Store/DataStore.swift    # @Observable state + JSON persistence
-└── Views/                   # ContentView, SidebarView, TrackerBar, EntryListView
+├── TimeTrackerApp.swift          # @main App + AppDelegate, hotkey wiring
+├── HotKeyManager.swift           # Carbon global hotkeys: ⌃⌥⌘1…9 + the ⇧⌃⌥⌘ commands
+├── SearchQuery.swift             # tiny boolean search language for the history filter
+├── Models/Models.swift           # Project, TimeEntry, AppData, duration formatting
+├── Store/DataStore.swift         # @Observable state + JSON persistence + export
+└── Views/
+    ├── ContentView.swift         # NavigationSplitView shell
+    ├── SidebarView.swift         # project list (= the shortcut list), editor sheet, export
+    ├── TrackerBar.swift          # running-timer bar (renders nothing while idle)
+    ├── EntryListView.swift       # day groups, project clusters, subtotals, summary header
+    ├── EntryEditorSheet.swift    # single-entry and group editors
+    └── MenuBar.swift             # menu-bar extra
 Scripts/
-├── build.sh                 # compile + assemble .app bundle (ad-hoc signed)
-└── install.sh               # build + copy to /Applications
+├── build.sh                      # compile + assemble .app bundle (ad-hoc signed)
+└── install.sh                    # build + copy to /Applications
 ```
