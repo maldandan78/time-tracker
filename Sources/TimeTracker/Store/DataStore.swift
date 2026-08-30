@@ -37,6 +37,10 @@ final class DataStore {
     /// menu, and the hotkey layer all react.
     private(set) var projects: [Project] = []
     private(set) var entries: [TimeEntry] = []
+    /// Daily per-project goals. Invariants (enforced in add/update and repaired on load):
+    /// every goal's project exists, its target is > 0, and each (project, kind) pair holds
+    /// at most one goal.
+    private(set) var goals: [Goal] = []
 
     @ObservationIgnored private let directoryURL: URL
     @ObservationIgnored private let fileURL: URL
@@ -86,10 +90,12 @@ final class DataStore {
     }
 
     /// Deletes a project and cascades to all of its time entries — including a running one, which
-    /// would otherwise keep ticking against a project that no longer exists.
+    /// would otherwise keep ticking against a project that no longer exists — and to its goals,
+    /// which would otherwise judge a project that can never accrue time again.
     func deleteProject(_ id: UUID) {
         projects.removeAll { $0.id == id }
         entries.removeAll { $0.projectID == id }
+        goals.removeAll { $0.projectID == id }
         save()
     }
 
@@ -248,6 +254,123 @@ final class DataStore {
         if changed { save() }
     }
 
+    // MARK: - Goals
+
+    /// Adds a daily goal. Returns false if the target is out of range, the project doesn't
+    /// exist, or that (project, kind) pair already has a goal.
+    @discardableResult
+    func addGoal(projectID: UUID, kind: GoalKind, target: TimeInterval) -> Bool {
+        guard isValidGoal(projectID: projectID, kind: kind, target: target, excluding: nil) else {
+            return false
+        }
+        goals.append(Goal(projectID: projectID, kind: kind, target: target))
+        save()
+        return true
+    }
+
+    /// Rewrites a goal's project, kind, and target under the same validation as addGoal. Also
+    /// returns false when the goal itself no longer exists — e.g. its project was deleted under
+    /// an open editor sheet, cascading the goal away — so a stale save can't resurrect it.
+    @discardableResult
+    func updateGoal(_ id: UUID, projectID: UUID, kind: GoalKind, target: TimeInterval) -> Bool {
+        guard let idx = goals.firstIndex(where: { $0.id == id }),
+              isValidGoal(projectID: projectID, kind: kind, target: target, excluding: id)
+        else { return false }
+        goals[idx].projectID = projectID
+        goals[idx].kind = kind
+        goals[idx].target = target
+        save()
+        return true
+    }
+
+    func deleteGoal(_ id: UUID) {
+        goals.removeAll { $0.id == id }
+        save()
+    }
+
+    /// Whether the (project, kind) pair already has a goal — one per pair, like unique project
+    /// names. Backs the editor sheet's live duplicate warning.
+    func goalExists(projectID: UUID, kind: GoalKind, excluding: UUID?) -> Bool {
+        goals.contains { $0.id != excluding && $0.projectID == projectID && $0.kind == kind }
+    }
+
+    private func isValidGoal(projectID: UUID, kind: GoalKind, target: TimeInterval,
+                             excluding: UUID?) -> Bool {
+        Goal.targetRange.contains(target)
+            && project(projectID) != nil
+            && !goalExists(projectID: projectID, kind: kind, excluding: excluding)
+    }
+
+    func goalCount(for projectID: UUID) -> Int {
+        goals.reduce(0) { $0 + ($1.projectID == projectID ? 1 : 0) }
+    }
+
+    /// The first (project, kind) pair without a goal, in sidebar order preferring "at least" —
+    /// what a new goal defaults to, so the editor never opens pre-invalid.
+    var firstFreeGoalSlot: (projectID: UUID, kind: GoalKind)? {
+        for project in projects {
+            for kind in GoalKind.allCases
+            where !goalExists(projectID: project.id, kind: kind, excluding: nil) {
+                return (project.id, kind)
+            }
+        }
+        return nil
+    }
+
+    /// When false, every project already has both goal kinds and "New Goal" has nothing valid
+    /// to create — the button disables.
+    var hasFreeGoalSlot: Bool { firstFreeGoalSlot != nil }
+
+    /// Goals in display order — the sidebar's project order, "at least" before "at most" within
+    /// a project. Shared by the Goals pane and the menu-bar dropdown so both tell one story.
+    var orderedGoals: [Goal] {
+        // uniquing (not uniqueKeysWithValues) so duplicate project ids from a hand-edited
+        // file can't trap here — every other surface degrades gracefully on those.
+        let position = Dictionary(projects.enumerated().map { ($1.id, $0) },
+                                  uniquingKeysWith: { first, _ in first })
+        return goals.sorted { a, b in
+            let pa = position[a.projectID] ?? .max
+            let pb = position[b.projectID] ?? .max
+            if pa != pb { return pa < pb }
+            return a.kind == .atLeast && b.kind == .atMost
+        }
+    }
+
+    /// The project's total for the calendar day containing `now` — the metric daily goals are
+    /// judged on. Day membership follows the entry's *start* (the app-wide convention: a session
+    /// running past midnight counts wholly toward the day it began), and both the day filter and
+    /// the durations derive from `now`, so the whole figure describes one instant. Each entry's
+    /// duration is floored to whole seconds before summing, matching the entry list's totals.
+    func todayTotal(projectID: UUID, asOf now: Date) -> TimeInterval {
+        let cal = Calendar.current
+        return entries.reduce(0) { total, entry in
+            guard entry.projectID == projectID, cal.isDate(entry.start, inSameDayAs: now)
+            else { return total }
+            return total + entry.duration(asOf: now).rounded(.down)
+        }
+    }
+
+    /// Repairs a hand-edited or partially-restored file's goals the way the tolerant decoder
+    /// repairs the document: drops goals pointing at unknown projects, targets outside
+    /// `Goal.targetRange`, reused ids (which would break ForEach identity and make one delete
+    /// remove two goals), and all but the first goal per (project, kind). The next save
+    /// rewrites the file clean.
+    private static func sanitizedGoals(_ goals: [Goal], projects: [Project]) -> [Goal] {
+        struct Slot: Hashable {
+            let projectID: UUID
+            let kind: GoalKind
+        }
+        let projectIDs = Set(projects.map(\.id))
+        var seenIDs = Set<UUID>()
+        var seenSlots = Set<Slot>()
+        return goals.filter { goal in
+            projectIDs.contains(goal.projectID)
+                && Goal.targetRange.contains(goal.target)
+                && seenIDs.insert(goal.id).inserted
+                && seenSlots.insert(Slot(projectID: goal.projectID, kind: goal.kind)).inserted
+        }
+    }
+
     // MARK: - Running helpers
 
     /// Whether the currently-running entry belongs to this project.
@@ -260,7 +383,7 @@ final class DataStore {
     /// Writes the whole data document as JSON to ~/Downloads and returns the file URL.
     @discardableResult
     func exportData() -> URL? {
-        let snapshot = AppData(projects: projects, entries: entries)
+        let snapshot = AppData(projects: projects, entries: entries, goals: goals)
         guard let data = try? JSONEncoder.appEncoder.encode(snapshot) else { return nil }
         let fm = FileManager.default
         let downloads = fm.urls(for: .downloadsDirectory, in: .userDomainMask).first
@@ -288,6 +411,7 @@ final class DataStore {
             let decoded = try JSONDecoder.appDecoder.decode(AppData.self, from: data)
             self.projects = decoded.projects
             self.entries = decoded.entries
+            self.goals = Self.sanitizedGoals(decoded.goals, projects: decoded.projects)
         } catch {
             // Quarantine the unreadable file under a unique name (never delete a prior backup)
             // and start fresh. If we can't move it aside, disable persistence so the next
@@ -306,7 +430,7 @@ final class DataStore {
 
     private func save() {
         guard canPersist else { return }
-        let snapshot = AppData(projects: projects, entries: entries)
+        let snapshot = AppData(projects: projects, entries: entries, goals: goals)
         do {
             try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
             let data = try JSONEncoder.appEncoder.encode(snapshot)

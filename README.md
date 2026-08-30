@@ -22,6 +22,13 @@ to type. You start a timer **for a project**, and that's the whole decision.
   - `⇧⌃⌥⌘⌦` — discard the running timer entirely, recording nothing
     (that's forward-delete — `fn`+`delete` on a laptop — deliberately *not* backspace, which other
     system-wide utilities like to grab before it ever reaches us)
+- **Daily goals** — per project, two kinds: work **at least** N a day (reach it) or **at most** N a
+  day (stay under it), one goal of each kind per project. The **Goals** view in the sidebar shows
+  live progress bars — green when an "at least" goal is met, orange near an "at most" limit, red
+  once it's exceeded — and every goal row carries the same ▶ start button as the rest of the app.
+  The menu-bar dropdown lists each goal's status (`✓` met, `!` over, `·` in progress). An entry
+  counts toward the day it *started* (the app-wide convention), so a session running past midnight
+  belongs wholly to yesterday.
 - **History grouped by day**, and within each day **clustered by project**: repeated sessions on the
   same project collapse into one expandable row with a count and a combined duration. Each day has a
   subtotal, and the header above the list shows **Today** and **This week**.
@@ -34,6 +41,8 @@ to type. You start a timer **for a project**, and that's the whole decision.
   and every project as a one-click start/stop row with its shortcut label.
 - Data is stored as readable JSON at `~/Library/Application Support/TimeTracker/data.json`, written
   atomically on every change. **Export** from the sidebar drops a timestamped copy in `~/Downloads`.
+  (Goals live in the same file under a `goals` key; a pre-goals build opens such a file fine but
+  strips the key on its first save — the same accepted tradeoff as other legacy keys.)
 - A running timer survives quitting/relaunching — it resumes counting from its original start time.
 
 ## Requirements
@@ -65,7 +74,7 @@ Sources/TimeTracker/
 ├── TimeTrackerApp.swift          # @main App + AppDelegate, hotkey wiring
 ├── HotKeyManager.swift           # Carbon global hotkeys: ⌃⌥⌘1…9 + the ⇧⌃⌥⌘ commands
 ├── SearchQuery.swift             # tiny boolean search language for the history filter
-├── Models/Models.swift           # Project, TimeEntry, AppData, duration formatting
+├── Models/Models.swift           # Project, TimeEntry, Goal, AppData, duration formatting
 ├── Store/DataStore.swift         # @Observable state + JSON persistence + export
 └── Views/
     ├── ContentView.swift         # NavigationSplitView shell
@@ -73,6 +82,7 @@ Sources/TimeTracker/
     ├── TrackerBar.swift          # running-timer bar (renders nothing while idle)
     ├── EntryListView.swift       # day groups, project clusters, subtotals, summary header
     ├── EntryEditorSheet.swift    # single-entry and group editors
+    ├── GoalsView.swift           # daily goals: progress rows + goal editor sheet
     └── MenuBar.swift             # menu-bar extra
 Scripts/
 ├── build.sh                      # compile + assemble .app bundle (ad-hoc signed)

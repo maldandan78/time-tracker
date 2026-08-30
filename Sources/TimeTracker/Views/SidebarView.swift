@@ -14,6 +14,8 @@ struct SidebarView: View {
             Section {
                 Label("All Projects", systemImage: "tray.full")
                     .tag(SidebarItem.all)
+                Label("Goals", systemImage: "target")
+                    .tag(SidebarItem.goals)
             }
             // The project list *is* the quick-launch list: each row starts/stops its own timer and
             // the first nine carry ⌃⌥⌘1…9, assigned by position.
@@ -102,8 +104,20 @@ struct SidebarView: View {
             }
             Button("Cancel", role: .cancel) { deleting = nil }
         } message: {
-            Text("This permanently deletes the project and all of its time entries. This cannot be undone.")
+            Text(deleteMessage)
         }
+    }
+
+    /// Names everything the cascade takes with the project — its entries always, and its
+    /// daily goals when it has any.
+    private var deleteMessage: String {
+        var text = "This permanently deletes the project and all of its time entries."
+        if let project = deleting {
+            let goals = store.goalCount(for: project.id)
+            if goals == 1 { text += " Its daily goal is removed too." }
+            if goals > 1 { text += " Its \(goals) daily goals are removed too." }
+        }
+        return text + " This cannot be undone."
     }
 
     // MARK: - Projects

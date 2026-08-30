@@ -49,22 +49,34 @@ struct MainPane: View {
                 }
             } else {
                 VStack(spacing: 0) {
-                    // Always mounted, and takes no space while idle. It must not be wrapped in a
-                    // `runningEntry != nil` conditional here: it hosts the running-timer editor
-                    // sheet, which has to outlive a stop fired from elsewhere (see TrackerBar).
+                    // Always mounted — on the Goals branch too — and takes no space while idle.
+                    // It must not be wrapped in a `runningEntry != nil` (or selection)
+                    // conditional here: it hosts the running-timer editor sheet, which has to
+                    // outlive a stop fired from elsewhere (see TrackerBar), and the live clock
+                    // should stay visible while checking goals about the running project.
                     TrackerBar()
-                    EntryListView(selection: selection, searchText: searchText)
+                    if selection == .goals {
+                        GoalsView()
+                    } else {
+                        EntryListView(selection: selection, searchText: searchText)
+                            // Native toolbar search field (⌘F focuses it). Matches project
+                            // names, so it filters history only — it lives on this branch,
+                            // not on MainPane, to keep a dead search field off the Goals
+                            // pane. `searchText` stays owned by MainPane so a query typed
+                            // here survives a detour through Goals.
+                            .searchable(text: $searchText, placement: .toolbar,
+                                        prompt: "Search projects")
+                    }
                 }
             }
         }
         .navigationTitle(title)
-        // Native toolbar search field (⌘F focuses it). Matches project names.
-        .searchable(text: $searchText, placement: .toolbar, prompt: "Search projects")
     }
 
     private var title: String {
         switch selection {
         case .project(let id): return store.projectName(id)
+        case .goals: return "Goals"
         default: return "All Projects"
         }
     }

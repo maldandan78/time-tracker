@@ -54,6 +54,20 @@ struct MenuBarContent: View {
             Text("No timer running")
         }
 
+        // Today's goal status — one disabled line per goal, in the same order as the Goals
+        // pane. Computed when the menu's body is evaluated (each open, and on any store
+        // change); no ticking, matching the rest of the dropdown.
+        if !store.goals.isEmpty {
+            Divider()
+            Section("Goals") {
+                // One instant for the whole section, so a project's two rows can't disagree.
+                let now = Date()
+                ForEach(store.orderedGoals) { goal in
+                    Text(goalLine(goal, asOf: now))
+                }
+            }
+        }
+
         // The project list is the quick-launch list, so only the first nine carry a ⌃⌥⌘N
         // shortcut — the rest are listed without one and start on click. Reordering the sidebar
         // list is how the user picks which nine those are.
@@ -88,6 +102,24 @@ struct MenuBarContent: View {
             NSApp.terminate(nil)
         }
         .keyboardShortcut("q")
+    }
+
+    /// One goal status line: "✓ Deep Work  5:12 / 5h" (an "at least" goal met),
+    /// "! Email  3:20 / 3h — over" (an "at most" limit exceeded), "· Reading  2:10 / 5h"
+    /// otherwise. Deliberately none of this menu's action glyphs (▶/⏹) — these rows are
+    /// status, not buttons.
+    private func goalLine(_ goal: Goal, asOf now: Date) -> String {
+        let total = store.todayTotal(projectID: goal.projectID, asOf: now)
+        let pair = "\(TimeFormat.hourMinute(total)) / \(TimeFormat.abbreviated(goal.target))"
+        let name = store.projectName(goal.projectID)
+        switch goal.kind {
+        case .atLeast where goal.isSatisfied(total: total):
+            return "✓ \(name)  \(pair)"
+        case .atMost where !goal.isSatisfied(total: total):
+            return "! \(name)  \(pair) — over"
+        default:
+            return "· \(name)  \(pair)"
+        }
     }
 
     /// One quick-launch row: a ▶/⏹ state glyph, the project name, and the project's global
