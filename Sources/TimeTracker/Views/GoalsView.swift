@@ -157,34 +157,24 @@ struct GoalsView: View {
         }
     }
 
-    /// A glyph only when there's something to announce: an "at least" goal reached, or an
-    /// "at most" limit blown. Merely being under a limit isn't an achievement to decorate.
+    /// A ✓ whenever the goal is satisfied — an "at least" goal reached, or an "at most" limit
+    /// still respected: staying within a limit is the win, so it reads as one from the first
+    /// second of the day. The ✓ gives way to a red ! only once an "at most" limit is exceeded.
     @ViewBuilder
     private func statusGlyph(_ goal: Goal, total: TimeInterval) -> some View {
-        switch goal.kind {
-        case .atLeast:
-            if goal.isSatisfied(total: total) {
-                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-            }
-        case .atMost:
-            if !goal.isSatisfied(total: total) {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
-            }
+        if goal.isSatisfied(total: total) {
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+        } else if goal.kind == .atMost {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
         }
     }
 
-    /// Accent while simply in progress; green once an "at least" goal is met. An "at most"
-    /// bar warns as the limit nears — orange from 90% — and red once exceeded, so the same
-    /// filling bar can't read as optimistic right up to a violation.
+    /// Green while the goal is satisfied — an "at least" goal met, or an "at most" limit not
+    /// yet exceeded — accent while an "at least" goal is still short, red once an "at most"
+    /// limit is blown.
     private func barTint(_ goal: Goal, total: TimeInterval) -> Color {
-        switch goal.kind {
-        case .atLeast:
-            return goal.isSatisfied(total: total) ? .green : .accentColor
-        case .atMost:
-            if !goal.isSatisfied(total: total) { return .red }
-            if total >= goal.target * 0.9 { return .orange }
-            return .accentColor
-        }
+        if goal.isSatisfied(total: total) { return .green }
+        return goal.kind == .atMost ? .red : .accentColor
     }
 
     /// ▶ Start a new entry for the goal's project (stops any running timer).

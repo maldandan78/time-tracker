@@ -24,11 +24,13 @@ to type. You start a timer **for a project**, and that's the whole decision.
     system-wide utilities like to grab before it ever reaches us)
 - **Daily goals** — per project, two kinds: work **at least** N a day (reach it) or **at most** N a
   day (stay under it), one goal of each kind per project. The **Goals** view in the sidebar shows
-  live progress bars — green when an "at least" goal is met, orange near an "at most" limit, red
-  once it's exceeded — and every goal row carries the same ▶ start button as the rest of the app.
-  The menu-bar dropdown lists each goal's status (`✓` met, `!` over, `·` in progress). An entry
-  counts toward the day it *started* (the app-wide convention), so a session running past midnight
-  belongs wholly to yesterday.
+  live progress bars — green while the goal holds (an "at least" goal met, or an "at most" limit
+  still respected), red once an "at most" limit is exceeded — and every goal row carries the same ▶
+  start button as the rest of the app. The menu-bar dropdown lists each goal's status
+  (`✓` satisfied, `!` over, `·` in progress). Both surfaces count the running timer as it accrues —
+  the day's total keeps climbing second by second while you work. An entry counts toward the day it
+  *started* (the app-wide convention), so a session running past midnight belongs wholly to
+  yesterday.
 - **History grouped by day**, and within each day **clustered by project**: repeated sessions on the
   same project collapse into one expandable row with a count and a combined duration. Each day has a
   subtotal, and the header above the list shows **Today** and **This week**.
