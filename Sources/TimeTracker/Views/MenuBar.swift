@@ -52,6 +52,9 @@ struct MenuBarLabel: View {
         .onReceive(timer) { date in
             if store.runningEntry != nil { clock.tick = date }
         }
+        // This label outlives every window, so the reopen path always has an opener on file
+        // even if the window is closed before its own content ever appears.
+        .captureMainWindowOpener()
     }
 
     private func labelText(for running: TimeEntry) -> String {
@@ -66,7 +69,6 @@ struct MenuBarLabel: View {
 /// The dropdown shown when the menu-bar item is clicked.
 struct MenuBarContent: View {
     @Environment(DataStore.self) private var store
-    @Environment(\.openWindow) private var openWindow
 
     @AppStorage(MenuBarPrefs.showProjectKey) private var showProject = false
 
@@ -124,8 +126,7 @@ struct MenuBarContent: View {
 
         Divider()
         Button("Open Time Tracker") {
-            NSApp.activate(ignoringOtherApps: true)
-            openWindow(id: "main")
+            MainWindow.show()
         }
         Button("Quit Time Tracker") {
             NSApp.terminate(nil)

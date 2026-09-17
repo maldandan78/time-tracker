@@ -9,10 +9,11 @@ struct TimeTrackerApp: App {
     var body: some Scene {
         // A single-instance Window (not WindowGroup): openWindow(id:"main") focuses the existing
         // window or recreates it if closed, instead of spawning duplicates.
-        Window("Time Tracker", id: "main") {
+        Window("Time Tracker", id: MainWindow.id) {
             ContentView()
                 .environment(store)
                 .frame(minWidth: 720, minHeight: 420)
+                .captureMainWindowOpener()
         }
         .defaultSize(width: 900, height: 600)
         .windowResizability(.contentMinSize)
@@ -23,6 +24,48 @@ struct TimeTrackerApp: App {
         } label: {
             MenuBarLabel(store: store)
         }
+    }
+}
+
+/// How a closed main window gets back on screen.
+///
+/// The app deliberately outlives its window so the global hotkeys keep working, and closing that
+/// window only orders it out — so a Dock-icon click has nothing for AppKit's default reopen to
+/// restore, and the app comes forward as a menu bar and nothing else unless someone puts the
+/// window back. Ordering it front again is enough for that case; should SwiftUI ever discard the
+/// window instead, recreating it takes `openWindow`, which exists only inside a view — so the
+/// views hand their action over here for the delegate (and the menu-bar item) to fall back on.
+@MainActor
+enum MainWindow {
+    static let id = "main"
+
+    private static var opener: (() -> Void)?
+
+    /// Called by every view that carries the action, so one is on file before the window is ever
+    /// closed — see `captureMainWindowOpener()`.
+    static func capture(_ openWindow: OpenWindowAction) {
+        opener = { openWindow(id: id) }
+    }
+
+    /// Put the main window back in front: deminiaturized and ordered front if AppKit still has
+    /// it, recreated through SwiftUI if not.
+    static func show() {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+
+        if let window = existing {
+            if window.isMiniaturized { window.deminiaturize(nil) }
+            window.makeKeyAndOrderFront(nil)
+        } else {
+            opener?()
+        }
+    }
+
+    /// The main window, while AppKit still has it — which survives a close, but not necessarily
+    /// forever. `MenuBarExtra`'s status-item window and any panel can't become main, which is
+    /// what tells them apart from ours.
+    private static var existing: NSWindow? {
+        NSApp.windows.first { $0.canBecomeMain && !($0 is NSPanel) }
     }
 }
 
@@ -59,7 +102,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
+    /// A Dock-icon click (or `open -a`). AppKit's default reopen won't bring back a window that
+    /// was closed rather than minimized, so put it back here and return false to keep AppKit
+    /// from also trying.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        true
+        MainWindow.show()
+        return false
+    }
+}
+
+extension View {
+    /// Files this view's `openWindow` action with `MainWindow`, so the app delegate can reopen the
+    /// main window from outside SwiftUI. Applied to both the window's own content and the
+    /// menu-bar label: the label outlives every window, so an action is always on file, and the
+    /// action stays usable for the life of the app.
+    func captureMainWindowOpener() -> some View {
+        modifier(CaptureMainWindowOpener())
+    }
+}
+
+private struct CaptureMainWindowOpener: ViewModifier {
+    @Environment(\.openWindow) private var openWindow
+
+    func body(content: Content) -> some View {
+        content.onAppear { MainWindow.capture(openWindow) }
     }
 }
